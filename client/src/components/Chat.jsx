@@ -6,7 +6,12 @@ import { AuthContext } from '../context/AuthContext';
 import UserList from './UserList';
 import config from '../config';
 
-const socket = io(config.SOCKET_URL);
+// Initialize socket with proper configuration
+const socket = io(config.SOCKET_URL, {
+  transports: ['websocket', 'polling'],
+  withCredentials: true,
+  autoConnect: true
+});
 
 function Chat() {
   const [selectedUser, setSelectedUser] = useState(null);
@@ -25,7 +30,9 @@ function Chat() {
       setMessages(prev => [...prev, message]);
     });
 
-    return () => socket.off('receiveMessage');
+    return () => {
+      socket.off('receiveMessage');
+    };
   }, [user]);
 
   useEffect(() => {

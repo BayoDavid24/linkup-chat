@@ -12,34 +12,36 @@ const messageRoutes = require('./routes/messages');
 const app = express();
 const server = http.createServer(app);
 
-// Allowed origins for production
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  process.env.CLIENT_URL // We'll set this in Render
-];
+// Get client URL from environment or use defaults
+const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 
+// Configure Socket.IO with proper CORS
 const io = socketIo(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: [
+      'http://localhost:5173',
+      'http://localhost:3000',
+      CLIENT_URL,
+      'https://linkup-chat-lemon.vercel.app' // Add your actual Vercel URL
+    ],
     methods: ["GET", "POST"],
-    credentials: true
-  }
+    credentials: true,
+    allowedHeaders: ["x-auth-token", "Content-Type"]
+  },
+  transports: ['websocket', 'polling']
 });
 
-// Middleware
+// CORS middleware - must be before routes
 app.use(cors({
-  origin: function(origin, callback) {
-    // Allow requests with no origin (mobile apps, Postman, etc.)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1 || origin.includes('vercel.app')) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    CLIENT_URL,
+    'https://linkup-chat-lemon.vercel.app'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'x-auth-token']
 }));
 
 app.use(express.json());
@@ -55,6 +57,11 @@ app.use('/api/messages', messageRoutes);
 
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+  console.error('❌ MONGODB_URI is not defined in environment variables');
+  process.exit(1);
+}
 
 mongoose.connect(MONGODB_URI)
   .then(() => console.log('✅ MongoDB connected successfully'))
@@ -88,4 +95,7 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+server.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`✅ Accepting requests from: ${CLIENT_URL}`);
+});
