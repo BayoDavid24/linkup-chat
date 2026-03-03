@@ -6,22 +6,45 @@ import { AuthContext } from '../context/AuthContext';
 import UserList from './UserList';
 import config from '../config';
 
-// Initialize socket with proper configuration
+// Initialize socket with polling only for production reliability
 const socket = io(config.SOCKET_URL, {
-  transports: ['websocket', 'polling'],
+  transports: ['polling'], // Use polling only on free hosting
   withCredentials: true,
-  autoConnect: true
+  autoConnect: true,
+  reconnection: true,
+  reconnectionDelay: 1000,
+  reconnectionAttempts: 10
 });
 
 function Chat() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
+  const [isConnected, setIsConnected] = useState(false);
   const { user, logout } = useContext(AuthContext);
   const navigate = useNavigate();
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
+    // Connection status handlers
+    socket.on('connect', () => {
+      console.log('✅ Socket connected');
+      setIsConnected(true);
+      if (user) {
+        socket.emit('join', user.id);
+      }
+    });
+
+    socket.on('disconnect', () => {
+      console.log('❌ Socket disconnected');
+      setIsConnected(false);
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+      setIsConnected(false);
+    });
+
     if (user) {
       socket.emit('join', user.id);
     }
@@ -31,6 +54,9 @@ function Chat() {
     });
 
     return () => {
+      socket.off('connect');
+      socket.off('disconnect');
+      socket.off('connect_error');
       socket.off('receiveMessage');
     };
   }, [user]);
@@ -65,7 +91,12 @@ function Chat() {
 
       const message = res.data;
       setMessages(prev => [...prev, message]);
-      socket.emit('sendMessage', message);
+      
+      // Only emit if socket is connected, otherwise just rely on database
+      if (isConnected) {
+        socket.emit('sendMessage', message);
+      }
+      
       setNewMessage('');
     } catch (err) {
       console.error('Error sending message:', err);
@@ -73,6 +104,7 @@ function Chat() {
   };
 
   const handleLogout = () => {
+    socket.disconnect();
     logout();
     navigate('/login');
   };
@@ -82,7 +114,16 @@ function Chat() {
       {/* Sidebar */}
       <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
         <div className="p-5 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-blue-600 to-purple-600">
-          <h2 className="text-2xl font-bold text-white">LinkUp</h2>
+          <div>
+            <h2 className="text-2xl font-bold text-white">LinkUp</h2>
+            {/* Connection indicator */}
+            <div className="flex items-center mt-1">
+              <div className={`w-2 h-2 rounded-full mr-2 ${isConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
+              <span className="text-xs text-white opacity-75">
+                {isConnected ? 'Connected' : 'Connecting...'}
+              </span>
+            </div>
+          </div>
           <button
             onClick={handleLogout}
             className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm rounded-lg transition duration-200"
